@@ -4,45 +4,62 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const app = express();
-app.use(cors()); // Autorise ton site à parler au serveur
+app.use(cors());
 app.use(bodyParser.json());
 
-// --- C'EST ICI QUE TU CACHES TES URLS MAKE ---
-// On utilise des variables d'environnement (process.env) pour ne pas écrire les secrets ici
+// Mapping des actions vers tes variables Render
 const WEBHOOKS = {
-    login: process.env.MAKE_LOGIN_URL,
-    read: process.env.MAKE_READ_URL,
-    write: process.env.MAKE_WRITE_URL,
-    clock: process.env.MAKE_CLOCK_URL
-    // Ajoute les autres ici...
+    'login': process.env.URL_LOGIN,
+    'read': process.env.URL_READ,
+    'write': process.env.URL_WRITE_POST,
+    'update': process.env.URL_UPDATE,
+    'log': process.env.URL_LOG,
+    'read-logs': process.env.URL_READ_LOGS,
+    'gatekeeper': process.env.URL_GATEKEEPER,
+    'badge': process.env.URL_BADGE_GEN,
+    'emp-update': process.env.URL_EMPLOYEE_UPDATE,
+    'contract-gen': process.env.URL_CONTRACT_GENERATE,
+    'contract-upload': process.env.URL_UPLOAD_SIGNED_CONTRACT,
+    'leave': process.env.URL_LEAVE_REQUEST,
+    'clock': process.env.URL_CLOCK_ACTION
 };
 
-// --- LA ROUTE MAGIQUE ---
-// Ton site va appeler : https://ton-serveur.onrender.com/api/login
-// Le serveur va appeler en secret le vrai webhook
-app.post('/api/:action', async (req, res) => {
-    const action = req.params.action; // ex: 'login', 'read'
+// Cette route gère TOUT (GET et POST)
+app.all('/api/:action', async (req, res) => {
+    const action = req.params.action;
     const secretUrl = WEBHOOKS[action];
 
     if (!secretUrl) {
-        return res.status(404).json({ error: "Action inconnue" });
+        console.error(`Action inconnue demandée: ${action}`);
+        return res.status(404).json({ error: "Action inconnue ou Webhook non configuré" });
     }
 
     try {
-        // Le serveur appelle Make
-        // On transfère les données (req.body) et les paramètres (req.query)
-        const response = await axios.post(secretUrl, req.body, { params: req.query });
+        console.log(`Proxy vers : ${action} (${req.method})`);
         
-        // On renvoie la réponse de Make au client
-        res.json(response.data);
+        // On prépare la requête vers Make
+        const config = {
+            method: req.method, // On garde la même méthode (GET ou POST)
+            url: secretUrl,
+            params: req.query, // On passe les paramètres d'URL (ex: ?id=...)
+            data: req.body     // On passe les données (ex: formulaire)
+        };
+
+        const response = await axios(config);
+        res.status(response.status).json(response.data);
+
     } catch (error) {
         console.error("Erreur Make:", error.message);
-        res.status(500).json({ error: "Erreur de communication avec le serveur" });
+        // Si Make renvoie une erreur, on la renvoie au client
+        if (error.response) {
+             res.status(error.response.status).json(error.response.data);
+        } else {
+             res.status(500).json({ error: "Erreur serveur interne" });
+        }
     }
 });
 
-// Lancer le serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Serveur lancé sur le port ${PORT}`);
+    console.log(`Serveur Proxy RH lancé sur le port ${PORT}`);
 });
