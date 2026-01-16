@@ -12,10 +12,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Cette clé doit être la même que dans ton tableau de bord Render
-const JWT_SECRET = process.env.JWT_SECRET || 'cle_secours_si_oublie';
+const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
-// Liste des permissions : on définit qui a le droit de faire quoi
+// TABLE DES PERMISSIONS (C'est ici que la vraie sécurité réside)
 const PERMISSIONS = {
     'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock'],
     'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock'],
@@ -45,24 +44,26 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
     if (!secretUrl) return res.status(404).json({ error: "Action inconnue" });
 
-    let userRole = 'GUEST';
-
     // VERIFICATION DU TOKEN (Sauf pour le login)
     if (action !== 'login') {
         const authHeader = req.headers['authorization'];
-        if (!authHeader) return res.status(401).json({ error: "Non authentifié" });
+        if (!authHeader) return res.status(401).json({ error: "Authentification requise" });
 
         try {
             const token = authHeader.split(' ')[1];
             const decoded = jwt.verify(token, JWT_SECRET);
-            userRole = decoded.role;
-
-            // Bloquer si le rôle n'a pas la permission
+            
+            // Vérifier si le rôle autorise cette action précise
+            const userRole = decoded.role;
             if (!PERMISSIONS[userRole] || !PERMISSIONS[userRole].includes(action)) {
-                return res.status(403).json({ error: "Action non autorisée pour votre rôle" });
+                console.warn(`[REFUS] ${decoded.nom} (${userRole}) a tenté d'accéder à : ${action}`);
+                return res.status(403).json({ error: "Accès interdit : privilèges insuffisants" });
             }
+            
+            // On ajoute les infos de l'utilisateur à la requête pour Make si besoin
+            req.user = decoded;
         } catch (err) {
-            return res.status(401).json({ error: "Session expirée" });
+            return res.status(401).json({ error: "Session invalide ou expirée" });
         }
     }
 
@@ -89,16 +90,17 @@ app.all('/api/:action', upload.any(), async (req, res) => {
             responseType: 'arraybuffer'
         });
 
-        // SI LOGIN REUSSI : On génère le TOKEN
+        // GENERATION DU TOKEN AU LOGIN
         if (action === 'login') {
             const makeData = JSON.parse(Buffer.from(response.data).toString());
             if (makeData.status === 'success') {
+                // Création du Token avec le rôle récupéré de Make
                 const token = jwt.sign(
                     { id: makeData.id, role: makeData.role, nom: makeData.nom },
                     JWT_SECRET,
                     { expiresIn: '24h' }
                 );
-                makeData.token = token; // On injecte le token dans la réponse
+                makeData.token = token;
                 return res.json(makeData);
             }
         }
@@ -107,9 +109,10 @@ app.all('/api/:action', upload.any(), async (req, res) => {
         res.send(response.data);
 
     } catch (error) {
-        res.status(500).json({ error: "Erreur serveur" });
+        console.error("Erreur Proxy:", error.message);
+        res.status(500).json({ error: "Erreur de communication avec le service RH" });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur prêt`));
+app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif`));
