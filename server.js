@@ -1,13 +1,17 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const bodyParser = require('body-parser');
+const multer = require('multer'); // Indispensable pour recevoir les fichiers
+const FormData = require('form-data'); // Indispensable pour renvoyer les fichiers vers Make
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
+const upload = multer(); // Gestion des uploads en mémoire
 
-// Mapping des actions vers tes variables Render
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Mapping des actions vers tes variables d'environnement Render
 const WEBHOOKS = {
     'login': process.env.URL_LOGIN,
     'read': process.env.URL_READ,
@@ -24,35 +28,61 @@ const WEBHOOKS = {
     'clock': process.env.URL_CLOCK_ACTION
 };
 
-// Cette route gère TOUT (GET et POST)
-app.all('/api/:action', async (req, res) => {
+// Route universelle (upload.any() permet d'accepter des fichiers n'importe où)
+app.all('/api/:action', upload.any(), async (req, res) => {
     const action = req.params.action;
     const secretUrl = WEBHOOKS[action];
 
     if (!secretUrl) {
-        console.error(`Action inconnue demandée: ${action}`);
         return res.status(404).json({ error: "Action inconnue ou Webhook non configuré" });
     }
 
     try {
-        console.log(`Proxy vers : ${action} (${req.method})`);
-        
-        // On prépare la requête vers Make
-        const config = {
-            method: req.method, // On garde la même méthode (GET ou POST)
-            url: secretUrl,
-            params: req.query, // On passe les paramètres d'URL (ex: ?id=...)
-            data: req.body     // On passe les données (ex: formulaire)
-        };
+        // 1. Préparation des données (Gestion Spéciale Fichiers)
+        let dataToSend;
+        let requestHeaders = {};
 
-        const response = await axios(config);
-        res.status(response.status).json(response.data);
+        if (req.files && req.files.length > 0) {
+            // S'il y a des fichiers (Photo, Contrat scan)
+            const form = new FormData();
+            
+            // On ajoute les champs textes
+            for (const key in req.body) {
+                form.append(key, req.body[key]);
+            }
+            
+            // On ajoute les fichiers
+            req.files.forEach(file => {
+                form.append(file.fieldname, file.buffer, file.originalname);
+            });
+
+            dataToSend = form;
+            requestHeaders = form.getHeaders(); // Headers spécifiques pour multipart
+        } else {
+            // Si c'est juste du texte/JSON (Login, Clock, etc.)
+            dataToSend = req.body;
+        }
+
+        // 2. Appel vers Make
+        const response = await axios({
+            method: req.method,
+            url: secretUrl,
+            params: req.query, // Pour les GET (ex: badge?id=...)
+            data: dataToSend,  // Pour les POST
+            headers: { ...requestHeaders }, // Fusion des headers
+            responseType: 'arraybuffer' // Astuce: On récupère les données brutes (pour gérer Images et HTML)
+        });
+
+        // 3. Réponse intelligente au navigateur
+        // On transfère le type de contenu que Make nous a donné (JSON ou HTML)
+        const contentType = response.headers['content-type'];
+        res.set('Content-Type', contentType);
+        res.send(response.data); // .send() s'adapte (contrairement à .json qui force le texte)
 
     } catch (error) {
-        console.error("Erreur Make:", error.message);
-        // Si Make renvoie une erreur, on la renvoie au client
+        console.error(`Erreur sur ${action}:`, error.message);
         if (error.response) {
-             res.status(error.response.status).json(error.response.data);
+             res.status(error.response.status).send(error.response.data);
         } else {
              res.status(500).json({ error: "Erreur serveur interne" });
         }
