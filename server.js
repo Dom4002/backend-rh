@@ -1,17 +1,28 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const multer = require('multer'); // Indispensable pour recevoir les fichiers
-const FormData = require('form-data'); // Indispensable pour renvoyer les fichiers vers Make
+const multer = require('multer');
+const FormData = require('form-data');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-const upload = multer(); // Gestion des uploads en mémoire
+const upload = multer();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Mapping des actions vers tes variables d'environnement Render
+// Cette clé doit être la même que dans ton tableau de bord Render
+const JWT_SECRET = process.env.JWT_SECRET || 'cle_secours_si_oublie';
+
+// Liste des permissions : on définit qui a le droit de faire quoi
+const PERMISSIONS = {
+    'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock'],
+    'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock'],
+    'MANAGER': ['login', 'read', 'log', 'badge', 'leave', 'clock'],
+    'EMPLOYEE': ['login', 'read', 'badge', 'leave', 'clock', 'emp-update']
+};
+
 const WEBHOOKS = {
     'login': process.env.URL_LOGIN,
     'read': process.env.URL_READ,
@@ -28,68 +39,77 @@ const WEBHOOKS = {
     'clock': process.env.URL_CLOCK_ACTION
 };
 
-// Route universelle (upload.any() permet d'accepter des fichiers n'importe où)
 app.all('/api/:action', upload.any(), async (req, res) => {
     const action = req.params.action;
     const secretUrl = WEBHOOKS[action];
 
-    if (!secretUrl) {
-        return res.status(404).json({ error: "Action inconnue ou Webhook non configuré" });
+    if (!secretUrl) return res.status(404).json({ error: "Action inconnue" });
+
+    let userRole = 'GUEST';
+
+    // VERIFICATION DU TOKEN (Sauf pour le login)
+    if (action !== 'login') {
+        const authHeader = req.headers['authorization'];
+        if (!authHeader) return res.status(401).json({ error: "Non authentifié" });
+
+        try {
+            const token = authHeader.split(' ')[1];
+            const decoded = jwt.verify(token, JWT_SECRET);
+            userRole = decoded.role;
+
+            // Bloquer si le rôle n'a pas la permission
+            if (!PERMISSIONS[userRole] || !PERMISSIONS[userRole].includes(action)) {
+                return res.status(403).json({ error: "Action non autorisée pour votre rôle" });
+            }
+        } catch (err) {
+            return res.status(401).json({ error: "Session expirée" });
+        }
     }
 
     try {
-        // 1. Préparation des données (Gestion Spéciale Fichiers)
         let dataToSend;
         let requestHeaders = {};
 
         if (req.files && req.files.length > 0) {
-            // S'il y a des fichiers (Photo, Contrat scan)
             const form = new FormData();
-            
-            // On ajoute les champs textes
-            for (const key in req.body) {
-                form.append(key, req.body[key]);
-            }
-            
-            // On ajoute les fichiers
-            req.files.forEach(file => {
-                form.append(file.fieldname, file.buffer, file.originalname);
-            });
-
+            for (const key in req.body) { form.append(key, req.body[key]); }
+            req.files.forEach(file => { form.append(file.fieldname, file.buffer, file.originalname); });
             dataToSend = form;
-            requestHeaders = form.getHeaders(); // Headers spécifiques pour multipart
+            requestHeaders = form.getHeaders();
         } else {
-            // Si c'est juste du texte/JSON (Login, Clock, etc.)
             dataToSend = req.body;
         }
 
-        // 2. Appel vers Make
         const response = await axios({
             method: req.method,
             url: secretUrl,
-            params: req.query, // Pour les GET (ex: badge?id=...)
-            data: dataToSend,  // Pour les POST
-            headers: { ...requestHeaders }, // Fusion des headers
-            responseType: 'arraybuffer' // Astuce: On récupère les données brutes (pour gérer Images et HTML)
+            params: req.query,
+            data: dataToSend,
+            headers: { ...requestHeaders },
+            responseType: 'arraybuffer'
         });
 
-        // 3. Réponse intelligente au navigateur
-        // On transfère le type de contenu que Make nous a donné (JSON ou HTML)
-        const contentType = response.headers['content-type'];
-        res.set('Content-Type', contentType);
-        res.send(response.data); // .send() s'adapte (contrairement à .json qui force le texte)
+        // SI LOGIN REUSSI : On génère le TOKEN
+        if (action === 'login') {
+            const makeData = JSON.parse(Buffer.from(response.data).toString());
+            if (makeData.status === 'success') {
+                const token = jwt.sign(
+                    { id: makeData.id, role: makeData.role, nom: makeData.nom },
+                    JWT_SECRET,
+                    { expiresIn: '24h' }
+                );
+                makeData.token = token; // On injecte le token dans la réponse
+                return res.json(makeData);
+            }
+        }
+
+        res.set('Content-Type', response.headers['content-type']);
+        res.send(response.data);
 
     } catch (error) {
-        console.error(`Erreur sur ${action}:`, error.message);
-        if (error.response) {
-             res.status(error.response.status).send(error.response.data);
-        } else {
-             res.status(500).json({ error: "Erreur serveur interne" });
-        }
+        res.status(500).json({ error: "Erreur serveur" });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Serveur Proxy RH lancé sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Serveur prêt`));
