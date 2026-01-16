@@ -45,27 +45,27 @@ app.all('/api/:action', upload.any(), async (req, res) => {
     if (!secretUrl) return res.status(404).json({ error: "Action inconnue" });
 
     // VERIFICATION DU TOKEN (Sauf pour le login)
+// VERIFICATION DU TOKEN (Sauf pour le login)
     if (action !== 'login') {
         const authHeader = req.headers['authorization'];
-        if (!authHeader) return res.status(401).json({ error: "Authentification requise" });
+        // Modif ici : On cherche le token dans le header OU dans les paramètres de l'URL
+        const token = authHeader ? authHeader.split(' ')[1] : req.query.token;
+
+        if (!token) return res.status(401).json({ error: "Authentification requise" });
 
         try {
-            const token = authHeader.split(' ')[1];
             const decoded = jwt.verify(token, JWT_SECRET);
-            
-            // Vérifier si le rôle autorise cette action précise
             const userRole = decoded.role;
+
             if (!PERMISSIONS[userRole] || !PERMISSIONS[userRole].includes(action)) {
-                console.warn(`[REFUS] ${decoded.nom} (${userRole}) a tenté d'accéder à : ${action}`);
                 return res.status(403).json({ error: "Accès interdit : privilèges insuffisants" });
             }
-            
-            // On ajoute les infos de l'utilisateur à la requête pour Make si besoin
             req.user = decoded;
         } catch (err) {
             return res.status(401).json({ error: "Session invalide ou expirée" });
         }
     }
+    
 
     try {
         let dataToSend;
