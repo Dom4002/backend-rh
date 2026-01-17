@@ -16,9 +16,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
 // TABLE DES PERMISSIONS (C'est ici que la vraie sécurité réside)
 const PERMISSIONS = {
-    'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'leave-action'],
-    'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'leave-action'],
-    'MANAGER': ['login', 'read', 'log', 'badge', 'leave', 'clock', 'leave-action'],
+    'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 'leave-action'],
+    'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 'leave-action'],
+    'MANAGER': ['login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action'],
     'EMPLOYEE': ['login', 'read', 'badge', 'leave', 'clock', 'emp-update']
 };
 
@@ -35,7 +35,9 @@ const WEBHOOKS = {
     'contract-gen': process.env.URL_CONTRACT_GENERATE,
     'contract-upload': process.env.URL_UPLOAD_SIGNED_CONTRACT,
     'leave': process.env.URL_LEAVE_REQUEST,
-    'clock': process.env.URL_CLOCK_ACTION
+    'clock': process.env.URL_CLOCK_ACTION,
+    'read-leaves': process.env.URL_READ_LEAVES,
+    'leave-action': process.env.URL_LEAVE_ACTION,
 };
 
 app.all('/api/:action', upload.any(), async (req, res) => {
@@ -116,6 +118,7 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif`));
+
 
 
 
