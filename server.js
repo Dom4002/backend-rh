@@ -16,9 +16,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
 // TABLE DES PERMISSIONS (C'est ici que la vraie sécurité réside)
 const PERMISSIONS = {
-    'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock'],
-    'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock'],
-    'MANAGER': ['login', 'read', 'log', 'badge', 'leave', 'clock'],
+    'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 'leave-decision'],
+    'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 'leave-decision'],
+    'MANAGER': ['login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-decision'],
     'EMPLOYEE': ['login', 'read', 'badge', 'leave', 'clock', 'emp-update']
 };
 
@@ -116,3 +116,4 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif`));
+
