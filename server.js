@@ -14,14 +14,31 @@ app.use(express.urlencoded({ extended: true }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
-// TABLE DES PERMISSIONS (C'est ici que la vraie sécurité réside)
+// --- 1. MISE À JOUR DES PERMISSIONS ---
+// Ajout de 'read-candidates' et 'candidate-action' pour ADMIN et RH
 const PERMISSIONS = {
-    'ADMIN': ['login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 'leave-action'],
-    'RH': ['login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 'leave-action'],
-    'MANAGER': ['login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action'],
-    'EMPLOYEE': ['login', 'read', 'badge', 'leave', 'clock', 'emp-update']
+    'ADMIN': [
+        'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
+        'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
+        'clock', 'read-leaves', 'leave-action', 
+        'read-candidates', 'candidate-action' // <--- NOUVEAU
+    ],
+    'RH': [
+        'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
+        'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
+        'leave-action', 
+        'read-candidates', 'candidate-action' // <--- NOUVEAU
+    ],
+    'MANAGER': [
+        'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action'
+    ],
+    'EMPLOYEE': [
+        'login', 'read', 'badge', 'leave', 'clock', 'emp-update'
+    ]
 };
 
+// --- 2. MISE À JOUR DES WEBHOOKS ---
+// Ajout des liens vers les nouveaux scénarios Make
 const WEBHOOKS = {
     'login': process.env.URL_LOGIN,
     'read': process.env.URL_READ,
@@ -38,87 +55,109 @@ const WEBHOOKS = {
     'clock': process.env.URL_CLOCK_ACTION,
     'read-leaves': process.env.URL_READ_LEAVES,
     'leave-action': process.env.URL_LEAVE_ACTION,
+    
+    // NOUVEAUX WEBHOOKS RECRUTEMENT
+    'read-candidates': process.env.URL_READ_CANDIDATES,
+    'candidate-action': process.env.URL_CANDIDATE_ACTION
 };
 
 app.all('/api/:action', upload.any(), async (req, res) => {
     const action = req.params.action;
     const secretUrl = WEBHOOKS[action];
 
-    if (!secretUrl) return res.status(404).json({ error: "Action inconnue" });
+    if (!secretUrl) return res.status(404).json({ error: "Action inconnue ou non configurée" });
 
     // VERIFICATION DU TOKEN (Sauf pour le login)
-// VERIFICATION DU TOKEN (Sauf pour le login)
     if (action !== 'login') {
         const authHeader = req.headers['authorization'];
-        // Modif ici : On cherche le token dans le header OU dans les paramètres de l'URL
+        // On cherche le token dans le header OU dans les paramètres de l'URL (utile pour badge/contract)
         const token = authHeader ? authHeader.split(' ')[1] : req.query.token;
 
         if (!token) return res.status(401).json({ error: "Authentification requise" });
 
         try {
             const decoded = jwt.verify(token, JWT_SECRET);
-            const userRole = decoded.role;
+            const userRole = decoded.role; // Assurez-vous que Make renvoie bien "role" (ex: "RH", "ADMIN")
 
+            // Vérification stricte des permissions
             if (!PERMISSIONS[userRole] || !PERMISSIONS[userRole].includes(action)) {
+                console.warn(`Accès refusé pour ${decoded.nom} (${userRole}) sur l'action ${action}`);
                 return res.status(403).json({ error: "Accès interdit : privilèges insuffisants" });
             }
             req.user = decoded;
         } catch (err) {
+            console.error("Erreur Token:", err.message);
             return res.status(401).json({ error: "Session invalide ou expirée" });
         }
     }
-    
 
     try {
         let dataToSend;
         let requestHeaders = {};
 
+        // Gestion des fichiers (Multipart) vs JSON standard
         if (req.files && req.files.length > 0) {
             const form = new FormData();
             for (const key in req.body) { form.append(key, req.body[key]); }
-            req.files.forEach(file => { form.append(file.fieldname, file.buffer, file.originalname); });
+            req.files.forEach(file => { 
+                form.append(file.fieldname, file.buffer, file.originalname); 
+            });
             dataToSend = form;
             requestHeaders = form.getHeaders();
         } else {
             dataToSend = req.body;
         }
 
+        // Transmission à Make
         const response = await axios({
             method: req.method,
             url: secretUrl,
             params: req.query,
             data: dataToSend,
             headers: { ...requestHeaders },
-            responseType: 'arraybuffer'
+            responseType: 'arraybuffer' // Important pour relayer des fichiers (PDF/Images) retournés par Make
         });
 
         // GENERATION DU TOKEN AU LOGIN
         if (action === 'login') {
-            const makeData = JSON.parse(Buffer.from(response.data).toString());
-            if (makeData.status === 'success') {
-                // Création du Token avec le rôle récupéré de Make
-                const token = jwt.sign(
-                    { id: makeData.id, role: makeData.role, nom: makeData.nom },
-                    JWT_SECRET,
-                    { expiresIn: '24h' }
-                );
-                makeData.token = token;
-                return res.json(makeData);
+            const responseText = Buffer.from(response.data).toString();
+            try {
+                const makeData = JSON.parse(responseText);
+                if (makeData.status === 'success') {
+                    // Création du Token JWT
+                    const token = jwt.sign(
+                        { 
+                            id: makeData.id, 
+                            role: (makeData.role || "EMPLOYEE").toUpperCase(), // Force majuscule pour correspondre à PERMISSIONS
+                            nom: makeData.nom 
+                        },
+                        JWT_SECRET,
+                        { expiresIn: '24h' }
+                    );
+                    makeData.token = token;
+                    return res.json(makeData);
+                }
+            } catch (e) {
+                console.error("Erreur parsing réponse Login:", e);
             }
         }
 
-        res.set('Content-Type', response.headers['content-type']);
+        // Relai de la réponse Make vers le Frontend
+        if(response.headers['content-type']) {
+            res.set('Content-Type', response.headers['content-type']);
+        }
         res.send(response.data);
 
     } catch (error) {
-        console.error("Erreur Proxy:", error.message);
-        res.status(500).json({ error: "Erreur de communication avec le service RH" });
+        console.error(`Erreur Proxy [${action}]:`, error.message);
+        if (error.response) {
+            // Si Make a répondu une erreur (4xx, 5xx), on la transmet
+            res.status(error.response.status).send(error.response.data);
+        } else {
+            res.status(500).json({ error: "Erreur de communication avec le service RH (Make)" });
+        }
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif`));
-
-
-
-
+app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif sur le port ${PORT}`));
