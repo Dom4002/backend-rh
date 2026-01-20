@@ -15,30 +15,34 @@ app.use(express.urlencoded({ extended: true }));
 const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
 // --- 1. MISE À JOUR DES PERMISSIONS ---
-// Ajout de 'read-candidates' et 'candidate-action' pour ADMIN et RH
+// Ajout de 'read-config' pour TOUS les rôles (nécessaire pour le GPS)
 const PERMISSIONS = {
     'ADMIN': [
         'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
         'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
         'clock', 'read-leaves', 'leave-action', 
-        'read-candidates', 'candidate-action' // <--- NOUVEAU
+        'read-candidates', 'candidate-action',
+        'read-config' // <--- NOUVEAU
     ],
     'RH': [
         'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
         'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
         'leave-action', 
-        'read-candidates', 'candidate-action' // <--- NOUVEAU
+        'read-candidates', 'candidate-action',
+        'read-config' // <--- NOUVEAU
     ],
     'MANAGER': [
-        'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action'
+        'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action',
+        'read-config' // <--- NOUVEAU
     ],
     'EMPLOYEE': [
-        'login', 'read', 'badge', 'leave', 'clock', 'emp-update'
+        'login', 'read', 'badge', 'leave', 'clock', 'emp-update',
+        'read-config' // <--- NOUVEAU (Indispensable pour qu'ils puissent pointer)
     ]
 };
 
 // --- 2. MISE À JOUR DES WEBHOOKS ---
-// Ajout des liens vers les nouveaux scénarios Make
+// Ajout du lien vers le scénario Make de configuration
 const WEBHOOKS = {
     'login': process.env.URL_LOGIN,
     'read': process.env.URL_READ,
@@ -56,9 +60,12 @@ const WEBHOOKS = {
     'read-leaves': process.env.URL_READ_LEAVES,
     'leave-action': process.env.URL_LEAVE_ACTION,
     
-    // NOUVEAUX WEBHOOKS RECRUTEMENT
+    // RECRUTEMENT
     'read-candidates': process.env.URL_READ_CANDIDATES,
-    'candidate-action': process.env.URL_CANDIDATE_ACTION
+    'candidate-action': process.env.URL_CANDIDATE_ACTION,
+
+    // NOUVEAU : CONFIGURATION SAAS
+    'read-config': process.env.URL_GET_CONFIG // <--- C'est ici qu'on lie l'action à l'URL Make
 };
 
 app.all('/api/:action', upload.any(), async (req, res) => {
@@ -70,14 +77,13 @@ app.all('/api/:action', upload.any(), async (req, res) => {
     // VERIFICATION DU TOKEN (Sauf pour le login)
     if (action !== 'login') {
         const authHeader = req.headers['authorization'];
-        // On cherche le token dans le header OU dans les paramètres de l'URL (utile pour badge/contract)
         const token = authHeader ? authHeader.split(' ')[1] : req.query.token;
 
         if (!token) return res.status(401).json({ error: "Authentification requise" });
 
         try {
             const decoded = jwt.verify(token, JWT_SECRET);
-            const userRole = decoded.role; // Assurez-vous que Make renvoie bien "role" (ex: "RH", "ADMIN")
+            const userRole = decoded.role; 
 
             // Vérification stricte des permissions
             if (!PERMISSIONS[userRole] || !PERMISSIONS[userRole].includes(action)) {
@@ -115,7 +121,7 @@ app.all('/api/:action', upload.any(), async (req, res) => {
             params: req.query,
             data: dataToSend,
             headers: { ...requestHeaders },
-            responseType: 'arraybuffer' // Important pour relayer des fichiers (PDF/Images) retournés par Make
+            responseType: 'arraybuffer' 
         });
 
         // GENERATION DU TOKEN AU LOGIN
@@ -124,11 +130,10 @@ app.all('/api/:action', upload.any(), async (req, res) => {
             try {
                 const makeData = JSON.parse(responseText);
                 if (makeData.status === 'success') {
-                    // Création du Token JWT
                     const token = jwt.sign(
                         { 
                             id: makeData.id, 
-                            role: (makeData.role || "EMPLOYEE").toUpperCase(), // Force majuscule pour correspondre à PERMISSIONS
+                            role: (makeData.role || "EMPLOYEE").toUpperCase(), 
                             nom: makeData.nom 
                         },
                         JWT_SECRET,
@@ -151,7 +156,6 @@ app.all('/api/:action', upload.any(), async (req, res) => {
     } catch (error) {
         console.error(`Erreur Proxy [${action}]:`, error.message);
         if (error.response) {
-            // Si Make a répondu une erreur (4xx, 5xx), on la transmet
             res.status(error.response.status).send(error.response.data);
         } else {
             res.status(500).json({ error: "Erreur de communication avec le service RH (Make)" });
