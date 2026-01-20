@@ -21,14 +21,14 @@ const PERMISSIONS = {
         'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
         'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
         'clock', 'read-leaves', 'leave-action', 
-        'read-candidates', 'candidate-action', 'read-flash', 'write-flash
+        'read-candidates', 'candidate-action', 'read-flash', 'write-flash,
         'read-config' // <--- NOUVEAU
     ],
     'RH': [
         'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
         'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
         'leave-action', 
-        'read-candidates', 'candidate-action', 'read-flash', 'write-flash
+        'read-candidates', 'candidate-action', 'read-flash', 'write-flash,
         'read-config' // <--- NOUVEAU
     ],
     'MANAGER': [
@@ -169,5 +169,6 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif sur le port ${PORT}`));
+
 
 
