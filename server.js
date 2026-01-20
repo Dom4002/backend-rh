@@ -21,23 +21,23 @@ const PERMISSIONS = {
         'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
         'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
         'clock', 'read-leaves', 'leave-action', 
-        'read-candidates', 'candidate-action',
+        'read-candidates', 'candidate-action', 'read-flash', 'write-flash
         'read-config' // <--- NOUVEAU
     ],
     'RH': [
         'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
         'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
         'leave-action', 
-        'read-candidates', 'candidate-action',
+        'read-candidates', 'candidate-action', 'read-flash', 'write-flash
         'read-config' // <--- NOUVEAU
     ],
     'MANAGER': [
         'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action',
-        'read-config' // <--- NOUVEAU
+        'read-config', 'read-flash', 'write-flash // <--- NOUVEAU
     ],
     'EMPLOYEE': [
         'login', 'read', 'badge', 'leave', 'clock', 'emp-update',
-        'read-config' // <--- NOUVEAU (Indispensable pour qu'ils puissent pointer)
+        'read-config', 'read-flash', 'write-flash // <--- NOUVEAU (Indispensable pour qu'ils puissent pointer)
     ]
 };
 
@@ -63,6 +63,10 @@ const WEBHOOKS = {
     // RECRUTEMENT
     'read-candidates': process.env.URL_READ_CANDIDATES,
     'candidate-action': process.env.URL_CANDIDATE_ACTION,
+
+    // ... vos autres webhooks ...
+    'read-flash': 'process.env.URL_READ_FLASH',
+    'write-flash': 'process.env.URL_WRITE_FLASH'
 
     // NOUVEAU : CONFIGURATION SAAS
     'read-config': process.env.URL_GET_CONFIG // <--- C'est ici qu'on lie l'action à l'URL Make
@@ -165,3 +169,4 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif sur le port ${PORT}`));
+
