@@ -15,34 +15,34 @@ app.use(express.urlencoded({ extended: true }));
 const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
 // --- 1. MISE À JOUR DES PERMISSIONS ---
-// Ajout de 'read-config' pour TOUS les rôles (nécessaire pour le GPS)
 const PERMISSIONS = {
     'ADMIN': [
         'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
         'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
         'clock', 'read-leaves', 'leave-action', 
-        'read-candidates', 'candidate-action', 'read-flash', 'write-flash,
-        'read-config' // <--- NOUVEAU
+        'read-candidates', 'candidate-action', 'read-config',
+        'read-flash', 'write-flash' // Admin peut tout faire
     ],
     'RH': [
         'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
         'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
         'leave-action', 
-        'read-candidates', 'candidate-action', 'read-flash', 'write-flash,
-        'read-config' // <--- NOUVEAU
+        'read-candidates', 'candidate-action', 'read-config',
+        'read-flash', 'write-flash' // RH peut écrire des flashs
     ],
     'MANAGER': [
         'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action',
-        'read-config', 'read-flash', 'write-flash // <--- NOUVEAU
+        'read-config', 
+        'read-flash', 'write-flash' // Manager peut écrire des flashs
     ],
     'EMPLOYEE': [
         'login', 'read', 'badge', 'leave', 'clock', 'emp-update',
-        'read-config', 'read-flash', 'write-flash // <--- NOUVEAU (Indispensable pour qu'ils puissent pointer)
+        'read-config', 
+        'read-flash' // Employé peut SEULEMENT lire (pas écrire)
     ]
 };
 
 // --- 2. MISE À JOUR DES WEBHOOKS ---
-// Ajout du lien vers le scénario Make de configuration
 const WEBHOOKS = {
     'login': process.env.URL_LOGIN,
     'read': process.env.URL_READ,
@@ -64,12 +64,12 @@ const WEBHOOKS = {
     'read-candidates': process.env.URL_READ_CANDIDATES,
     'candidate-action': process.env.URL_CANDIDATE_ACTION,
 
-    // ... vos autres webhooks ...
-    'read-flash': 'process.env.URL_READ_FLASH',
-    'write-flash': 'process.env.URL_WRITE_FLASH',
+    // MESSAGERIE FLASH (Correction ici: pas de guillemets autour de process.env)
+    'read-flash': process.env.URL_READ_FLASH,
+    'write-flash': process.env.URL_WRITE_FLASH,
 
-    // NOUVEAU : CONFIGURATION SAAS
-    'read-config': process.env.URL_GET_CONFIG // <--- C'est ici qu'on lie l'action à l'URL Make
+    // CONFIGURATION SAAS
+    'read-config': process.env.URL_GET_CONFIG
 };
 
 app.all('/api/:action', upload.any(), async (req, res) => {
@@ -169,6 +169,3 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif sur le port ${PORT}`));
-
-
-
