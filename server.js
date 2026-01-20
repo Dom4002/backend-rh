@@ -66,7 +66,7 @@ const WEBHOOKS = {
 
     // ... vos autres webhooks ...
     'read-flash': 'process.env.URL_READ_FLASH',
-    'write-flash': 'process.env.URL_WRITE_FLASH'
+    'write-flash': 'process.env.URL_WRITE_FLASH',
 
     // NOUVEAU : CONFIGURATION SAAS
     'read-config': process.env.URL_GET_CONFIG // <--- C'est ici qu'on lie l'action à l'URL Make
@@ -169,4 +169,5 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif sur le port ${PORT}`));
+
 
