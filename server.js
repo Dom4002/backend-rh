@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const multer = require('multer');
@@ -12,144 +12,160 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Clé secrète pour les tokens (laisse celle par défaut pour le dev ou configure-la dans Render)
 const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
-// --- NOUVELLE CONFIGURATION UNIQUE ---
-// Une seule variable d'environnement à configurer dans Render : URL_MASTER
-const MASTER_WEBHOOK_URL = process.env.URL_MASTER;
-
-/* 
-   MIDDLEWARE D'AUTHENTIFICATION 
-   Vérifie le token pour toutes les routes SAUF 'login'.
-*/
-const authenticateToken = (req, res, next) => {
-    const action = req.params.action;
-    
-    // Liste des actions accessibles sans être connecté
-    // On peut ajouter 'read-config' ici si tu veux charger le logo sur la page de login plus tard
-    const publicActions = ['login']; 
-    
-    if (publicActions.includes(action)) {
-        return next();
-    }
-
-    const authHeader = req.headers['authorization'];
-    // Format attendu : "Bearer LE_TOKEN_JWT"
-    const token = authHeader && authHeader.split(' ')[1]; 
-
-    if (!token) return res.status(401).json({ error: "Authentification requise" });
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: "Session expirée ou invalide" });
-        // On stocke les infos du user décodé pour les utiliser si besoin
-        req.user = user;
-        next();
-    });
+// --- 1. MISE À JOUR DES PERMISSIONS ---
+const PERMISSIONS = {
+    'ADMIN': [
+        'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
+        'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
+        'clock', 'read-leaves', 'leave-action', 
+        'read-candidates', 'candidate-action', 'read-config',
+        'read-flash', 'write-flash' // Admin peut tout faire
+    ],
+    'RH': [
+        'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
+        'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
+        'leave-action', 
+        'read-candidates', 'candidate-action', 'read-config',
+        'read-flash', 'write-flash' // RH peut écrire des flashs
+    ],
+    'MANAGER': [
+        'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action',
+        'read-config', 
+        'read-flash', 'write-flash' // Manager peut écrire des flashs
+    ],
+    'EMPLOYEE': [
+        'login', 'read', 'badge', 'leave', 'clock', 'emp-update',
+        'read-config', 
+        'read-flash' // Employé peut SEULEMENT lire (pas écrire)
+    ]
 };
 
-/*
-   ROUTEUR UNIVERSEL (Le cœur du système SaaS)
-   Toutes les requêtes /api/:action passent par ici.
-   Le serveur ne "sait" plus ce que font les actions, il transmet tout à Make.
-*/
-app.all('/api/:action', upload.any(), authenticateToken, async (req, res) => {
-    const action = req.params.action;
+// --- 2. MISE À JOUR DES WEBHOOKS ---
+const WEBHOOKS = {
+    'login': process.env.URL_LOGIN,
+    'read': process.env.URL_READ,
+    'write': process.env.URL_WRITE_POST,
+    'update': process.env.URL_UPDATE,
+    'log': process.env.URL_LOG,
+    'read-logs': process.env.URL_READ_LOGS,
+    'gatekeeper': process.env.URL_GATEKEEPER,
+    'badge': process.env.URL_BADGE_GEN,
+    'emp-update': process.env.URL_EMPLOYEE_UPDATE,
+    'contract-gen': process.env.URL_CONTRACT_GENERATE,
+    'contract-upload': process.env.URL_UPLOAD_SIGNED_CONTRACT,
+    'leave': process.env.URL_LEAVE_REQUEST,
+    'clock': process.env.URL_CLOCK_ACTION,
+    'read-leaves': process.env.URL_READ_LEAVES,
+    'leave-action': process.env.URL_LEAVE_ACTION,
+    
+    // RECRUTEMENT
+    'read-candidates': process.env.URL_READ_CANDIDATES,
+    'candidate-action': process.env.URL_CANDIDATE_ACTION,
 
-    // Sécurité : On vérifie que l'URL Master est bien configurée
-    if (!MASTER_WEBHOOK_URL) {
-        console.error("ERREUR CRITIQUE : La variable URL_MASTER n'est pas définie dans Render.");
-        return res.status(500).json({ error: "Configuration serveur manquante (URL_MASTER)" });
+    // MESSAGERIE FLASH (Correction ici: pas de guillemets autour de process.env)
+    'read-flash': process.env.URL_READ_FLASH,
+    'write-flash': process.env.URL_WRITE_FLASH,
+
+    // CONFIGURATION SAAS
+    'read-config': process.env.URL_GET_CONFIG
+};
+
+app.all('/api/:action', upload.any(), async (req, res) => {
+    const action = req.params.action;
+    const secretUrl = WEBHOOKS[action];
+
+    if (!secretUrl) return res.status(404).json({ error: "Action inconnue ou non configurée" });
+
+    // VERIFICATION DU TOKEN (Sauf pour le login)
+    if (action !== 'login') {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader ? authHeader.split(' ')[1] : req.query.token;
+
+        if (!token) return res.status(401).json({ error: "Authentification requise" });
+
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            const userRole = decoded.role; 
+
+            // Vérification stricte des permissions
+            if (!PERMISSIONS[userRole] || !PERMISSIONS[userRole].includes(action)) {
+                console.warn(`Accès refusé pour ${decoded.nom} (${userRole}) sur l'action ${action}`);
+                return res.status(403).json({ error: "Accès interdit : privilèges insuffisants" });
+            }
+            req.user = decoded;
+        } catch (err) {
+            console.error("Erreur Token:", err.message);
+            return res.status(401).json({ error: "Session invalide ou expirée" });
+        }
     }
 
     try {
         let dataToSend;
         let requestHeaders = {};
 
-        // 1. Préparation des données (JSON ou Fichiers Multipart)
+        // Gestion des fichiers (Multipart) vs JSON standard
         if (req.files && req.files.length > 0) {
-            // Cas complexe : Envoi de fichiers (ex: photo de profil, justificatif)
             const form = new FormData();
-            
-            // On ajoute les champs texte du formulaire
-            for (const key in req.body) {
-                form.append(key, req.body[key]);
-            }
-            
-            // On ajoute les fichiers binaires
-            req.files.forEach(file => {
-                form.append(file.fieldname, file.buffer, file.originalname);
+            for (const key in req.body) { form.append(key, req.body[key]); }
+            req.files.forEach(file => { 
+                form.append(file.fieldname, file.buffer, file.originalname); 
             });
-
             dataToSend = form;
             requestHeaders = form.getHeaders();
         } else {
-            // Cas simple : JSON standard
             dataToSend = req.body;
-            requestHeaders['Content-Type'] = 'application/json';
         }
 
-        // 2. Envoi vers le MASTER SCENARIO Make
-        // L'astuce magique : on ajoute ?action=... dans l'URL pour que le Routeur Make sache quoi faire
-        const makeResponse = await axios({
+        // Transmission à Make
+        const response = await axios({
             method: req.method,
-            url: `${MASTER_WEBHOOK_URL}?action=${action}`, 
+            url: secretUrl,
+            params: req.query,
             data: dataToSend,
-            params: req.method === 'GET' ? req.query : {}, // Si c'est un GET, on passe les paramètres d'URL
             headers: { ...requestHeaders },
-            responseType: 'arraybuffer' // Important pour relayer les PDF ou Images générés
+            responseType: 'arraybuffer' 
         });
 
-        // 3. Traitement Spécial : LOGIN
-        // Le serveur Node.js reste le garant de la sécurité JWT.
-        // Make vérifie les identifiants, Node.js signe le token.
+        // GENERATION DU TOKEN AU LOGIN
         if (action === 'login') {
-            const responseText = Buffer.from(makeResponse.data).toString();
+            const responseText = Buffer.from(response.data).toString();
             try {
-                const userData = JSON.parse(responseText);
-                
-                if (userData.status === 'success') {
-                    // Création du token signé par le serveur
+                const makeData = JSON.parse(responseText);
+                if (makeData.status === 'success') {
                     const token = jwt.sign(
                         { 
-                            id: userData.id, 
-                            nom: userData.nom, 
-                            role: (userData.role || 'EMPLOYEE').toUpperCase()
+                            id: makeData.id, 
+                            role: (makeData.role || "EMPLOYEE").toUpperCase(), 
+                            nom: makeData.nom 
                         },
                         JWT_SECRET,
                         { expiresIn: '24h' }
                     );
-                    
-                    // On renvoie la réponse de Make + le Token généré ici
-                    return res.json({ ...userData, token: token });
+                    makeData.token = token;
+                    return res.json(makeData);
                 }
             } catch (e) {
-                console.error("Erreur parsing réponse login Make:", e);
-                // On continue pour renvoyer l'erreur brute si le JSON est malformé
+                console.error("Erreur parsing réponse Login:", e);
             }
         }
 
-        // 4. Relai de la réponse standard (Proxy transparent)
-        // On copie le type de contenu (JSON, PDF, HTML...) reçu de Make vers le Frontend
-        if (makeResponse.headers['content-type']) {
-            res.set('Content-Type', makeResponse.headers['content-type']);
+        // Relai de la réponse Make vers le Frontend
+        if(response.headers['content-type']) {
+            res.set('Content-Type', response.headers['content-type']);
         }
-        
-        // On envoie les données brutes
-        res.send(makeResponse.data);
+        res.send(response.data);
 
     } catch (error) {
         console.error(`Erreur Proxy [${action}]:`, error.message);
-        
         if (error.response) {
-            // Si Make a répondu une erreur (400, 404, 500)
             res.status(error.response.status).send(error.response.data);
         } else {
-            // Si Make est injoignable (timeout, URL fausse)
-            res.status(502).json({ error: "Service RH indisponible (Make injoignable)" });
+            res.status(500).json({ error: "Erreur de communication avec le service RH (Make)" });
         }
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur SaaS Universal Actif sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Serveur Proxy Sécurisé Actif sur le port ${PORT}`));
