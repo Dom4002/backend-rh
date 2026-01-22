@@ -1,4 +1,4 @@
- const express = require('express');
+const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const multer = require('multer');
@@ -14,31 +14,31 @@ app.use(express.urlencoded({ extended: true }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
-// --- 1. MISE À JOUR DES PERMISSIONS ---
+// --- 1. MISE À JOUR DES PERMISSIONS (AJOUT DE READ-PAYROLL) ---
 const PERMISSIONS = {
     'ADMIN': [
         'login', 'read', 'write', 'update', 'log', 'read-logs', 'gatekeeper', 
         'badge', 'emp-update', 'contract-gen', 'contract-upload', 'leave', 
         'clock', 'read-leaves', 'leave-action', 
         'read-candidates', 'candidate-action', 'read-config',
-        'read-flash', 'write-flash' // Admin peut tout faire
+        'read-flash', 'write-flash', 'read-payroll' // Ajouté
     ],
     'RH': [
         'login', 'read', 'write', 'update', 'log', 'badge', 'emp-update', 
         'contract-gen', 'contract-upload', 'leave', 'clock', 'read-leaves', 
         'leave-action', 
         'read-candidates', 'candidate-action', 'read-config',
-        'read-flash', 'write-flash' // RH peut écrire des flashs
+        'read-flash', 'write-flash', 'read-payroll' // Ajouté
     ],
     'MANAGER': [
         'login', 'read', 'log', 'badge', 'leave', 'clock', 'read-leaves', 'leave-action',
         'read-config', 
-        'read-flash', 'write-flash' // Manager peut écrire des flashs
+        'read-flash', 'write-flash'
     ],
     'EMPLOYEE': [
         'login', 'read', 'badge', 'leave', 'clock', 'emp-update',
         'read-config', 
-        'read-flash' // Employé peut SEULEMENT lire (pas écrire)
+        'read-flash', 'read-payroll' // Ajouté
     ]
 };
 
@@ -64,12 +64,15 @@ const WEBHOOKS = {
     'read-candidates': process.env.URL_READ_CANDIDATES,
     'candidate-action': process.env.URL_CANDIDATE_ACTION,
 
-    // MESSAGERIE FLASH (Correction ici: pas de guillemets autour de process.env)
+    // MESSAGERIE FLASH
     'read-flash': process.env.URL_READ_FLASH,
     'write-flash': process.env.URL_WRITE_FLASH,
 
     // CONFIGURATION SAAS
-    'read-config': process.env.URL_GET_CONFIG
+    'read-config': process.env.URL_GET_CONFIG,
+
+    // BULLETINS DE PAIE (Ajouté)
+    'read-payroll': process.env.URL_READ_PAYROLL
 };
 
 app.all('/api/:action', upload.any(), async (req, res) => {
