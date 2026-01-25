@@ -24,6 +24,7 @@ const SCENARIO_MAP = {
     'read-config': process.env.URL_MASTER_READ,
     'read-payroll': process.env.URL_MASTER_READ,
     'read-logs': process.env.URL_MASTER_READ,
+    'read-report': process.env.URL_MASTER_READ, 
 
     // MASTER MUTATOR
     'write': process.env.URL_MASTER_WRITE,
@@ -54,24 +55,24 @@ const PERMISSIONS = {
         'login', 'read', 'read-leaves', 'read-candidates', 'read-flash', 'read-config', 'read-payroll', 'read-logs',
         'write', 'update', 'emp-update', 'write-flash',
         'log', 'clock', 'leave', 'leave-action', 'candidate-action',
-        'badge', 'gatekeeper', 'contract-gen', 'contract-upload'
+        'badge', 'gatekeeper', 'contract-gen', 'contract-upload', 'read-report'
     ],
     'RH': [
         'login', 'read', 'read-leaves', 'read-candidates', 'read-flash', 'read-config', 'read-payroll',
         'write', 'update', 'emp-update', 'write-flash',
         'log', 'clock', 'leave', 'leave-action', 'candidate-action',
-        'badge', 'contract-gen', 'contract-upload'
+        'badge', 'contract-gen', 'contract-upload', 'read-report'
     ],
     'MANAGER': [
         'login', 'read', 'read-leaves', 'read-flash', 'read-config',
         'write-flash',
-        'log', 'clock', 'leave', 'leave-action',
+        'log', 'clock', 'leave', 'leave-action', 'read-report' 
         'badge'
     ],
     'EMPLOYEE': [
         'login', 'read', 'read-flash', 'read-config', 'read-payroll',
         'emp-update',
-        'clock', 'leave',
+        'clock', 'leave', 'read-report'
         'badge'
     ]
 };
@@ -158,3 +159,4 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Optimisé (Clé 'route') actif sur le port ${PORT}`));
+
