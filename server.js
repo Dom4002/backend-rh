@@ -66,13 +66,13 @@ const PERMISSIONS = {
     'MANAGER': [
         'login', 'read', 'read-leaves', 'read-flash', 'read-config',
         'write-flash',
-        'log', 'clock', 'leave', 'leave-action', 'read-report' 
+        'log', 'clock', 'leave', 'leave-action', 'read-report',
         'badge'
     ],
     'EMPLOYEE': [
         'login', 'read', 'read-flash', 'read-config', 'read-payroll',
         'emp-update',
-        'clock', 'leave', 'read-report'
+        'clock', 'leave', 'read-report',
         'badge'
     ]
 };
@@ -159,4 +159,5 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Serveur Optimisé (Clé 'route') actif sur le port ${PORT}`));
+
 
