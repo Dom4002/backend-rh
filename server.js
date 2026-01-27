@@ -14,7 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cle_de_secours_indev';
 
-// --- 1. TABLE DE ROUTAGE (Pas de changement ici) ---
+// --- 1. TABLE DE ROUTAGE ---
 const SCENARIO_MAP = {
     // MASTER READER
     'read': process.env.URL_MASTER_READ,
@@ -25,12 +25,14 @@ const SCENARIO_MAP = {
     'read-payroll': process.env.URL_MASTER_READ,
     'read-logs': process.env.URL_MASTER_READ,
     'read-report': process.env.URL_MASTER_READ, 
+    'read-messages': process.env.URL_MASTER_READ, // Ajout Chat
 
     // MASTER MUTATOR
     'write': process.env.URL_MASTER_WRITE,
     'update': process.env.URL_MASTER_WRITE,
     'emp-update': process.env.URL_MASTER_WRITE,
     'write-flash': process.env.URL_MASTER_WRITE,
+    'send-message': process.env.URL_MASTER_WRITE, // Ajout Chat
 
     // MASTER FLOW CONTROL
     'log': process.env.URL_MASTER_FLOW,
@@ -49,31 +51,33 @@ const SCENARIO_MAP = {
     'login': process.env.URL_LOGIN
 };
 
-// --- 2. PERMISSIONS (Pas de changement ici) ---
+// --- 2. PERMISSIONS ---
 const PERMISSIONS = {
     'ADMIN': [
         'login', 'read', 'read-leaves', 'read-candidates', 'read-flash', 'read-config', 'read-payroll', 'read-logs',
         'write', 'update', 'emp-update', 'write-flash',
         'log', 'clock', 'leave', 'leave-action', 'candidate-action',
-        'badge', 'gatekeeper', 'contract-gen', 'contract-upload', 'read-report'
+        'badge', 'gatekeeper', 'contract-gen', 'contract-upload', 'read-report',
+        'read-messages', 'send-message' // Accès Chat
     ],
     'RH': [
         'login', 'read', 'read-leaves', 'read-candidates', 'read-flash', 'read-config', 'read-payroll',
         'write', 'update', 'emp-update', 'write-flash',
         'log', 'clock', 'leave', 'leave-action', 'candidate-action',
-        'badge', 'contract-gen', 'contract-upload', 'read-report'
+        'badge', 'contract-gen', 'contract-upload', 'read-report',
+        'read-messages', 'send-message' // Accès Chat
     ],
     'MANAGER': [
         'login', 'read', 'read-leaves', 'read-flash', 'read-config',
         'write-flash',
         'log', 'clock', 'leave', 'leave-action', 'read-report',
-        'badge'
+        'badge', 'read-messages', 'send-message' // Accès Chat
     ],
     'EMPLOYEE': [
         'login', 'read', 'read-flash', 'read-config', 'read-payroll',
         'emp-update',
         'clock', 'leave', 'read-report',
-        'badge'
+        'badge', 'read-messages', 'send-message' // Accès Chat
     ]
 };
 
@@ -105,9 +109,7 @@ app.all('/api/:action', upload.any(), async (req, res) => {
         let dataToSend;
         let requestHeaders = {};
 
-        // === CORRECTION MAJEURE ICI ===
         // On envoie le mot-clé de routage dans l'URL sous le nom 'route'
-        // Comme ça, il ne touche pas au Body (JSON) qui contient tes données métiers
         const queryWithRoute = { ...req.query, route: action };
 
         if (req.files && req.files.length > 0) {
@@ -119,21 +121,19 @@ app.all('/api/:action', upload.any(), async (req, res) => {
             dataToSend = form;
             requestHeaders = form.getHeaders();
         } else {
-            // On envoie le body tel quel, sans y injecter l'action en double
             dataToSend = req.body;
         }
 
         const response = await axios({
             method: req.method,
             url: targetUrl,
-            params: queryWithRoute, // C'est ici que part la clé 'route' = 'candidate-action'
-            data: dataToSend,       // Ici, ton JSON reste pur : { "action": "ACCEPTER", "id": "..." }
+            params: queryWithRoute,
+            data: dataToSend,
             headers: { ...requestHeaders },
             responseType: 'arraybuffer'
         });
 
         if (action === 'login') {
-             // ... (Logique Login inchangée) ...
              const responseText = Buffer.from(response.data).toString();
              try {
                  const makeData = JSON.parse(responseText);
@@ -158,6 +158,4 @@ app.all('/api/:action', upload.any(), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur Optimisé (Clé 'route') actif sur le port ${PORT}`));
-
-
+app.listen(PORT, () => console.log(`Serveur Messagerie Actif sur le port ${PORT}`));
